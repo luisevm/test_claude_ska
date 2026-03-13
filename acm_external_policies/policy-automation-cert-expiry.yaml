@@ -17,4 +17,3 @@ spec:
       alert_channel: "#platform-alerts"
       severity: "high"
       escalation_hours: 48
-    delayAfterRunSeconds: 86400

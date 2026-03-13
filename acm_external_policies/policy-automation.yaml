@@ -25,4 +25,3 @@ spec:
       # Azure credentials are configured in AAP as a custom credential type
       # or read from the aap-credentials Secret. Do not pass secrets here —
       # PolicyAutomation objects are stored in etcd and visible to hub admins.
-    delayAfterRunSeconds: 300
