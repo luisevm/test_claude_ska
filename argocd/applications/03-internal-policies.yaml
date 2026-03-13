@@ -13,11 +13,6 @@ spec:
     repoURL: https://github.com/luisevm/test_claude_ska.git
     targetRevision: main
     path: acm_internal_policies
-    plugin:
-      name: kustomize-policygenerator
-      env:
-        - name: KUSTOMIZE_BUILD_OPTIONS
-          value: "--enable-alpha-plugins"
   destination:
     server: https://kubernetes.default.svc
     namespace: acm-policies
