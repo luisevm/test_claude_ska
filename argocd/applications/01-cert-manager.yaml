@@ -10,8 +10,7 @@ metadata:
 spec:
   project: default
   source:
-    # REPLACE: with your Git repository URL
-    repoURL: https://git.mydomain.no/platform/acm-workload-identity.git
+    repoURL: https://github.com/luisevm/test_claude_ska.git
     targetRevision: main
     path: acm_cert_manager
     plugin:
