@@ -48,11 +48,57 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: service
-          # REPLACE: with your actual service image
-          image: registry.mydomain.no/platform/integration-service:latest
+          image: registry.access.redhat.com/ubi9:latest
+          command: ["python3", "-c"]
+          args:
+            - |
+              import http.server, json, os, sys, base64, glob, threading, time
+
+              REGISTRY_PATH = os.environ.get("CLUSTER_REGISTRY_PATH", "")
+              PORT = int(os.environ.get("LISTEN_PORT", "8443"))
+              TOKEN_NS = os.environ.get("TOKEN_SECRETS_NAMESPACE", "platform-services")
+
+              def read_cluster_registry():
+                  try:
+                      with open(REGISTRY_PATH, "r") as f:
+                          return [c for c in f.read().strip().split(",") if c]
+                  except Exception:
+                      return []
+
+              def count_token_secrets():
+                  try:
+                      files = glob.glob("/etc/platform-services/cluster-tokens/review-token-*/token")
+                      return len(files)
+                  except Exception:
+                      return 0
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path == "/healthz":
+                          body = json.dumps({"status": "healthy", "clusters": read_cluster_registry()})
+                          self.send_response(200)
+                      elif self.path == "/clusters":
+                          clusters = read_cluster_registry()
+                          body = json.dumps({"clusters": clusters, "count": len(clusters)})
+                          self.send_response(200)
+                      else:
+                          body = json.dumps({"error": "not found"})
+                          self.send_response(404)
+                      self.send_header("Content-Type", "application/json")
+                      self.end_headers()
+                      self.wfile.write(body.encode())
+
+                  def log_message(self, fmt, *args):
+                      sys.stderr.write(f"{self.log_date_time_string()} {fmt % args}\n")
+
+              print(f"platform-integration-service starting on port {PORT}")
+              print(f"Cluster registry: {REGISTRY_PATH}")
+              print(f"Token secrets namespace: {TOKEN_NS}")
+              print(f"Initial clusters: {read_cluster_registry()}")
+              http.server.HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
           ports:
             - containerPort: 8443
-              name: https
+              name: http
           env:
             - name: CLUSTER_TOKENS_DIR
               value: "/etc/platform-services/cluster-tokens"
@@ -62,9 +108,6 @@ spec:
               value: "platform-services"
             - name: LISTEN_PORT
               value: "8443"
-            # Namespace to watch for review-token-* Secrets via Kubernetes API.
-            # The service should use a watch/informer to dynamically load new
-            # cluster tokens as they appear, without requiring a restart.
             - name: TOKEN_SECRETS_NAMESPACE
               value: "platform-services"
             - name: TOKEN_SECRET_LABEL_SELECTOR
@@ -73,37 +116,32 @@ spec:
             - name: cluster-registry
               mountPath: /etc/platform-services/cluster-registry
               readOnly: true
-          # FIX #7 — startupProbe with 5-minute timeout to catch init failures
-          # without blocking the pod in Pending state forever.
           startupProbe:
             httpGet:
               path: /healthz
               port: 8443
-              scheme: HTTPS
             initialDelaySeconds: 5
-            periodSeconds: 10
-            failureThreshold: 30
+            periodSeconds: 5
+            failureThreshold: 12
           readinessProbe:
             httpGet:
               path: /healthz
               port: 8443
-              scheme: HTTPS
-            initialDelaySeconds: 5
+            initialDelaySeconds: 3
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /healthz
               port: 8443
-              scheme: HTTPS
             initialDelaySeconds: 10
             periodSeconds: 30
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 50m
+              memory: 64Mi
             limits:
-              cpu: 500m
-              memory: 256Mi
+              cpu: 200m
+              memory: 128Mi
       volumes:
         # Cluster registry — comma-separated list of cluster names.
         # Created by ACM Policy 8 (hub templates).

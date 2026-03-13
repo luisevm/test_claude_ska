@@ -25,11 +25,28 @@ spec:
       serviceAccountName: dataclassification-agent
       containers:
         - name: agent
-          # REPLACE: with your actual operator image
-          image: registry.mydomain.no/platform/dataclassification-agent:latest
+          image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              echo "=== dataclassification-agent started ==="
+              echo "Service URL: $PLATFORM_SERVICE_URL"
+              echo "Token path:  $TOKEN_PATH"
+              while true; do
+                if [ -f "$TOKEN_PATH" ]; then
+                  TOKEN=$(cat "$TOKEN_PATH")
+                  PAYLOAD=$(echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null)
+                  ISS=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.load(sys.stdin).get('iss','?'))" 2>/dev/null)
+                  SUB=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sub','?'))" 2>/dev/null)
+                  AUD=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.load(sys.stdin).get('aud','?'))" 2>/dev/null)
+                  EXP=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.load(sys.stdin).get('exp','?'))" 2>/dev/null)
+                  echo "$(date -Iseconds) PSAT ok (${#TOKEN} bytes) iss=$ISS sub=$SUB aud=$AUD exp=$EXP"
+                else
+                  echo "$(date -Iseconds) ERROR: token not found at $TOKEN_PATH"
+                fi
+                sleep 60
+              done
           env:
-            # URL of the central platform service
-            # REPLACE: with your actual service URL
             - name: PLATFORM_SERVICE_URL
               value: "https://platform-integration-service.platform-services.svc.cluster.local:8443"
             - name: TOKEN_PATH
@@ -40,11 +57,11 @@ spec:
               readOnly: true
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
+              cpu: 10m
+              memory: 32Mi
             limits:
-              cpu: 200m
-              memory: 128Mi
+              cpu: 100m
+              memory: 64Mi
       volumes:
         # Projected SA token with audience scoped to the platform service.
         # This token is short-lived (3600s = 1 hour) and auto-rotated by kubelet.
