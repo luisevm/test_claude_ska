@@ -236,37 +236,67 @@ reconciliation, and a single source of truth.
 ### Prerequisites for ArgoCD Deployment
 
 1. **OpenShift GitOps operator** installed on the ACM hub cluster
-2. **PolicyGenerator Kustomize plugin** available to the ArgoCD repo-server
+2. **PolicyGenerator Kustomize plugin** installed in the ArgoCD repo-server
+3. **Git repository** accessible from the cluster (public or with credentials configured in ArgoCD)
 
-There are two ways to make the PolicyGenerator plugin available:
-
-**Option A — OpenShift GitOps 1.12+ (easiest)**
-
-The PolicyGenerator plugin is pre-installed. Enable it in the ArgoCD CR:
-
-```yaml
-apiVersion: argoproj.io/v1beta1
-kind: ArgoCD
-metadata:
-  name: openshift-gitops
-  namespace: openshift-gitops
-spec:
-  kustomizeBuildOptions: "--enable-alpha-plugins"
-```
-
-**Option B — ConfigManagementPlugin sidecar**
-
-Apply the plugin ConfigMap included in this repo, then configure the repo-server
-to use it as a sidecar:
+**Step 1 — Enable kustomize alpha plugins in ArgoCD:**
 
 ```bash
-oc apply -f argocd/policygenerator-plugin.yaml
+oc patch argocd openshift-gitops -n openshift-gitops --type merge \
+  -p '{"spec":{"kustomizeBuildOptions":"--enable-alpha-plugins"}}'
 ```
 
-Then patch the ArgoCD repo-server Deployment to add a sidecar container that
-uses this ConfigMap. Refer to the
-[ArgoCD CMP documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/config-management-plugins/)
-for sidecar setup details.
+**Step 2 — Install PolicyGenerator binary via init container:**
+
+The PolicyGenerator binary is NOT pre-installed in the OpenShift GitOps repo-server.
+Install it by patching the ArgoCD CR to add an init container that downloads the binary:
+
+```bash
+oc patch argocd openshift-gitops -n openshift-gitops --type merge -p '{
+  "spec": {
+    "repo": {
+      "env": [
+        {"name": "KUSTOMIZE_PLUGIN_HOME", "value": "/etc/kustomize/plugin"}
+      ],
+      "initContainers": [
+        {
+          "name": "install-policy-generator",
+          "image": "registry.access.redhat.com/ubi9/ubi-minimal:latest",
+          "command": ["bash", "-c"],
+          "args": [
+            "curl -sL https://github.com/open-cluster-management-io/policy-generator-plugin/releases/download/v1.17.0/linux-amd64-PolicyGenerator -o /policy-plugins/PolicyGenerator && chmod 755 /policy-plugins/PolicyGenerator"
+          ],
+          "volumeMounts": [
+            {"name": "policy-generator", "mountPath": "/policy-plugins"}
+          ]
+        }
+      ],
+      "volumeMounts": [
+        {
+          "name": "policy-generator",
+          "mountPath": "/etc/kustomize/plugin/policy.open-cluster-management.io/v1/policygenerator"
+        }
+      ],
+      "volumes": [
+        {"name": "policy-generator", "emptyDir": {}}
+      ]
+    }
+  }
+}'
+```
+
+Wait for the repo-server to restart:
+
+```bash
+oc rollout status deployment/openshift-gitops-repo-server -n openshift-gitops --timeout=180s
+```
+
+**Step 3 — Grant ArgoCD permissions for ACM resources:**
+
+```bash
+oc adm policy add-cluster-role-to-user cluster-admin \
+  system:serviceaccount:openshift-gitops:openshift-gitops-argocd-application-controller
+```
 
 ### Repository Structure for GitOps
 
@@ -299,14 +329,19 @@ Wave 1: cert-manager operator (prerequisite for external trust TLS)
 Wave 2: external trust + internal trust (independent, deploy in parallel)
 ```
 
-**Step 1: Replace the Git repository URL**
+**Step 1: Verify the Git repository URL**
 
-Before deploying, update `repoURL` in all ArgoCD manifests:
+The ArgoCD Application files are pre-configured to use:
+
+```
+repoURL: https://github.com/luisevm/test_claude_ska.git
+```
+
+If your repository URL is different, update all ArgoCD manifests:
 
 ```bash
-# Replace the placeholder URL in all ArgoCD Application files
 find argocd/ -name '*.yaml' -exec sed -i \
-  's|https://git.mydomain.no/platform/acm-workload-identity.git|https://your-git-server.com/your-org/your-repo.git|g' {} +
+  's|https://github.com/luisevm/test_claude_ska.git|https://your-git-server.com/your-org/your-repo.git|g' {} +
 ```
 
 **Step 2: Create the AAP credentials secret**
