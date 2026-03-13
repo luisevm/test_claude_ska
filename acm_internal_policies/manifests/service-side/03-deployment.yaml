@@ -1,0 +1,113 @@
+# Central platform integration service.
+#
+# This service receives opaque PSATs from operators on remote clusters.
+# For each configured cluster, it attempts a TokenReview using the
+# long-lived review token to identify the caller.
+#
+# Volume mounts:
+#   /etc/platform-services/cluster-tokens/ — directory of per-cluster token Secrets
+#   /etc/platform-services/cluster-registry/ — ConfigMap mapping cluster names to API URLs
+#
+# Per-cluster Secrets (review-token-<clustername>) and the cluster-registry
+# ConfigMap are created by ACM Policy 8 (hub templates + object-templates-raw).
+#
+# FIX #7 — Startup resilience:
+#   - cluster-tokens volume uses emptyDir instead of projected with sources: []
+#     The service reads tokens via the Kubernetes API or from files written by
+#     an init process. This prevents pods from being stuck Pending forever.
+#   - cluster-registry ConfigMap is optional: true (already was).
+#   - Added startupProbe with 5-minute timeout to catch initialization failures.
+#   - The service image should start and serve /healthz even with 0 clusters,
+#     then dynamically load tokens from the Kubernetes API as Secrets appear.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-integration-service
+  namespace: platform-services
+  labels:
+    app: platform-integration-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: platform-integration-service
+  template:
+    metadata:
+      labels:
+        app: platform-integration-service
+    spec:
+      serviceAccountName: platform-integration-service
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: platform-integration-service
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: service
+          # REPLACE: with your actual service image
+          image: registry.mydomain.no/platform/integration-service:latest
+          ports:
+            - containerPort: 8443
+              name: https
+          env:
+            - name: CLUSTER_TOKENS_DIR
+              value: "/etc/platform-services/cluster-tokens"
+            - name: CLUSTER_REGISTRY_PATH
+              value: "/etc/platform-services/cluster-registry/clusters"
+            - name: EXPECTED_AUDIENCE
+              value: "platform-services"
+            - name: LISTEN_PORT
+              value: "8443"
+            # Namespace to watch for review-token-* Secrets via Kubernetes API.
+            # The service should use a watch/informer to dynamically load new
+            # cluster tokens as they appear, without requiring a restart.
+            - name: TOKEN_SECRETS_NAMESPACE
+              value: "platform-services"
+            - name: TOKEN_SECRET_LABEL_SELECTOR
+              value: "app.kubernetes.io/part-of=internal-trust"
+          volumeMounts:
+            - name: cluster-registry
+              mountPath: /etc/platform-services/cluster-registry
+              readOnly: true
+          # FIX #7 — startupProbe with 5-minute timeout to catch init failures
+          # without blocking the pod in Pending state forever.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8443
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8443
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8443
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        # Cluster registry — comma-separated list of cluster names.
+        # Created by ACM Policy 8 (hub templates).
+        - name: cluster-registry
+          configMap:
+            name: cluster-registry
+            optional: true

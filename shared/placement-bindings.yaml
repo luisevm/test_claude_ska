@@ -1,0 +1,90 @@
+# FIX #1 — PlacementBindings required to connect Policies/PolicySets to Placements.
+# The PolicyGenerator with generatePolicyPlacement=false does NOT generate these.
+# They must be applied manually or via a separate kustomization.
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: cert-manager-binding
+  namespace: acm-policies
+placementRef:
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+  name: placement-oidc-federation
+subjects:
+  - apiGroup: policy.open-cluster-management.io
+    kind: Policy
+    name: cert-manager-operator
+  - apiGroup: policy.open-cluster-management.io
+    kind: Policy
+    name: cert-manager-clusterissuer
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: binding-oidc-workload-identity
+  namespace: acm-policies
+placementRef:
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+  name: placement-oidc-federation
+subjects:
+  - apiGroup: policy.open-cluster-management.io
+    kind: PolicySet
+    name: oidc-workload-identity
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: binding-oidc-issuer-change
+  namespace: acm-policies
+placementRef:
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+  name: placement-oidc-issuer-change
+subjects:
+  - apiGroup: policy.open-cluster-management.io
+    kind: PolicySet
+    name: oidc-issuer-change
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: binding-internal-trust-operator
+  namespace: acm-policies
+placementRef:
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+  name: placement-internal-trust-operator
+subjects:
+  - apiGroup: policy.open-cluster-management.io
+    kind: PolicySet
+    name: internal-trust-operator-infra
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: binding-internal-trust-hub
+  namespace: acm-policies
+placementRef:
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+  name: placement-hub
+subjects:
+  - apiGroup: policy.open-cluster-management.io
+    kind: PolicySet
+    name: internal-trust-hub-infra
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: binding-internal-trust-service
+  namespace: acm-policies
+placementRef:
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+  name: placement-internal-trust-service
+subjects:
+  - apiGroup: policy.open-cluster-management.io
+    kind: PolicySet
+    name: internal-trust-service-infra

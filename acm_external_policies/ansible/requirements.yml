@@ -1,0 +1,6 @@
+---
+collections:
+  - name: f5networks.f5_modules
+  - name: azure.azcollection
+  - name: kubernetes.core
+  - name: community.general

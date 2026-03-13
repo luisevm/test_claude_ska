@@ -1,0 +1,66 @@
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PolicyGenerator
+metadata:
+  name: gen-policy-certmanager
+policyDefaults:
+  namespace: acm-policies
+  remediationAction: enforce
+  consolidateManifests: false
+  generatePolicyPlacement: false
+  generatePlacementWhenInSet: false
+  placement:
+    placementName: placement-oidc-federation
+  categories:
+    - "CM Configuration Management"
+  controls:
+    - "CM-2 Baseline Configuration"
+  standards:
+    - "NIST SP 800-53"
+  policyLabels:
+    policy_gen.name: cert-manager-operator
+  severity: medium
+
+placementBindingDefaults:
+  name: "cert-manager-binding"
+
+policies:
+  - name: cert-manager-operator
+    description: "Installs cert-manager operator and monitors deployment health"
+    remediationAction: enforce
+    manifests:
+      - path: manifests/namespace.yml
+        name: cert-manager-operator-namespace
+
+      - path: manifests/trusted-ca-configmap.yml
+        name: trusted-ca-configmap
+
+      - path: manifests/operatorpolicy.yml
+        name: cert-manager-operator-install
+
+      - path: manifests/health/cert-manager-status.yml
+        name: cert-manager-status
+        remediationAction: InformOnly
+
+      - path: manifests/cert-manager-namespace.yml
+        name: cert-manager-namespace
+
+  - name: cert-manager-clusterissuer
+    description: "Deploys a CA-based ClusterIssuer (replace with your production issuer)"
+    remediationAction: enforce
+    dependencies:
+      - name: cert-manager-operator
+        compliance: Compliant
+    manifests:
+      - path: manifests/ca-clusterissuer/ca-clusterissuer-secret.yml
+        name: ca-clusterissuer-secret
+
+      - path: manifests/ca-clusterissuer/ca-clusterissuer.yml
+        name: ca-clusterissuer
+        extraDependencies:
+          - name: ca-clusterissuer-secret
+            kind: ConfigurationPolicy
+            compliance: "Compliant"
+
+policySetDefaults:
+  generatePolicySetPlacement: false

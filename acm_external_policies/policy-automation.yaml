@@ -1,0 +1,28 @@
+# FIX #8 — Changed mode from everyEvent to once.
+#   everyEvent fires every 5m on NonCompliant, flooding AAP with duplicate jobs.
+#   mode=once fires once per cluster transition to NonCompliant.
+#   To re-trigger after a failure, delete the PolicyAutomation status:
+#     oc patch policyautomation oidc-external-infra-automation -n acm-policies \
+#       --type merge -p '{"status":{}}'
+#
+# FIX #11 — Removed sensitive values from extra_vars.
+#   azure_tenant_id and azure_app_id are now read from the aap-credentials
+#   Secret or from AAP credential types. Only non-sensitive routing vars remain.
+apiVersion: policy.open-cluster-management.io/v1beta1
+kind: PolicyAutomation
+metadata:
+  name: oidc-external-infra-automation
+  namespace: acm-policies
+spec:
+  policyRef: oidc-external-infra-check
+  mode: once
+  automationDef:
+    name: OIDC-External-Infra-Onboarding
+    secret: aap-credentials
+    type: AnsibleJob
+    extra_vars:
+      dns_zone: "auth.mydomain.no"
+      # Azure credentials are configured in AAP as a custom credential type
+      # or read from the aap-credentials Secret. Do not pass secrets here —
+      # PolicyAutomation objects are stored in etcd and visible to hub admins.
+    delayAfterRunSeconds: 300

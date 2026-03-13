@@ -1,0 +1,70 @@
+# ApplicationSet — alternative to App of Apps.
+#
+# Generates one ArgoCD Application per policy domain from a list generator.
+# All Applications are managed by a single ApplicationSet resource.
+#
+# Differences from App of Apps:
+#   - Single resource instead of parent + children
+#   - No sync waves (ArgoCD ApplicationSets do not support sync-wave ordering
+#     between generated Applications natively). Deploy shared resources first
+#     by applying shared/kustomization.yaml manually or use the App of Apps
+#     approach if ordering is critical.
+#   - Easier to extend: add a new entry to the list to onboard a new domain
+#
+# Usage:
+#   # First deploy shared resources (no PolicyGenerator needed)
+#   kustomize build shared/ | oc apply -f - -n acm-policies
+#   # Then deploy the ApplicationSet
+#   oc apply -f argocd/applicationset.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: acm-workload-identity
+  namespace: openshift-gitops
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - list:
+        elements:
+          - name: acm-shared-resources
+            path: shared
+            # shared/ uses plain kustomize (no PolicyGenerator)
+            usePlugin: "false"
+          - name: acm-cert-manager-policies
+            path: acm_cert_manager
+            usePlugin: "true"
+          - name: acm-oidc-external-policies
+            path: acm_external_policies
+            usePlugin: "true"
+          - name: acm-internal-trust-policies
+            path: acm_internal_policies
+            usePlugin: "true"
+  template:
+    metadata:
+      name: "{{ .name }}"
+      namespace: openshift-gitops
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+      source:
+        # REPLACE: with your Git repository URL
+        repoURL: https://git.mydomain.no/platform/acm-workload-identity.git
+        targetRevision: main
+        path: "{{ .path }}"
+        plugin:
+          name: kustomize-policygenerator
+          env:
+            - name: KUSTOMIZE_BUILD_OPTIONS
+              value: "--enable-alpha-plugins"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: acm-policies
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true

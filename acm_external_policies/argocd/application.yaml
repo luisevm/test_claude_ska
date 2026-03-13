@@ -1,0 +1,36 @@
+# DEPRECATED: Use the centralized ArgoCD setup in argocd/ at the repository root.
+#
+# This file is kept for backward compatibility. The recommended approach is to
+# use the App of Apps pattern which deploys ALL policy domains with correct
+# ordering (shared -> cert-manager -> external policies -> internal policies).
+#
+# See: argocd/app-of-apps.yaml
+# See: DEPLOYMENT_GUIDE.md — "Deploying with GitOps / ArgoCD"
+#
+# If you still want to deploy only the external policies independently:
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: oidc-workload-identity-policies
+  namespace: openshift-gitops
+spec:
+  project: default
+  source:
+    # REPLACE: with your Git repository URL
+    repoURL: https://git.mydomain.no/platform/acm-workload-identity.git
+    targetRevision: main
+    path: acm_external_policies
+    plugin:
+      name: kustomize-policygenerator
+      env:
+        - name: KUSTOMIZE_BUILD_OPTIONS
+          value: "--enable-alpha-plugins"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: acm-policies
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

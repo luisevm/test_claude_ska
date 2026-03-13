@@ -1,0 +1,28 @@
+# FIX #4 — Grant the governance-policy-framework addon SA permissions
+# to lookup ManagedCluster and ManagedClusterView resources for hub templates.
+# Required on the ACM hub cluster (applied to local-cluster).
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: governance-hub-template-lookups
+rules:
+  - apiGroups: ["cluster.open-cluster-management.io"]
+    resources: ["managedclusters"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["view.open-cluster-management.io"]
+    resources: ["managedclusterview", "managedclusterviews"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: governance-hub-template-lookups
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: governance-hub-template-lookups
+subjects:
+  - kind: ServiceAccount
+    name: governance-policy-framework-sa
+    namespace: open-cluster-management-agent-addon

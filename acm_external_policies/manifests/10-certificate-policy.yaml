@@ -1,0 +1,14 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: CertificatePolicy
+metadata:
+  name: oidc-proxy-cert-expiry
+spec:
+  namespaceSelector:
+    include:
+      - openshift-oidc-proxy
+  minimumDuration: 720h
+  maximumDuration: 8760h
+  maximumCADuration: 87600h
+  disallowedSANPattern: "[\\*]"
+  remediationAction: inform
+  severity: high

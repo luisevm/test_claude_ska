@@ -1,0 +1,20 @@
+# Requires cert-manager to be installed on the cluster
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: oidc-proxy-cert
+  namespace: openshift-oidc-proxy
+spec:
+  secretName: oidc-proxy-tls
+  issuerRef:
+    # REPLACE: with your ClusterIssuer name
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    # ACM hub template — dynamically derives the cluster-specific FQDN
+    - '{{ (lookup "config.openshift.io/v1" "Infrastructure" "" "cluster").status.apiServerURL | replace "https://api." "openshift-oidc-" | replace ":6443" ".auth.mydomain.no" }}'
+  duration: 2160h
+  renewBefore: 720h
+  privateKey:
+    algorithm: RSA
+    size: 2048

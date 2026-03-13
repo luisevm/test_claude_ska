@@ -1,0 +1,147 @@
+---
+- name: Set derived variables
+  set_fact:
+    oidc_hostname: "openshift-oidc-{{ cluster_name }}.{{ domain }}"
+    issuer_url: "https://openshift-oidc-{{ cluster_name }}.{{ domain }}"
+
+# FIX #9 — Auto-discover cluster router IP from ACM hub.
+# Reads the ManagedCluster's IngressController status via the hub API
+# instead of requiring manual cluster_router_ip per cluster.
+- name: Discover cluster router IP from ACM hub
+  kubernetes.core.k8s_info:
+    api_version: cluster.open-cluster-management.io/v1
+    kind: ManagedCluster
+    name: "{{ cluster_name }}"
+  register: managed_cluster_info
+  when: cluster_router_ip is not defined
+
+- name: Extract router IP from ManagedCluster status
+  set_fact:
+    cluster_router_ip: >-
+      {{- (managed_cluster_info.resources[0].status.clusterClaims
+           | selectattr('name', 'equalto', 'consoleurl.open-cluster-management.io')
+           | map(attribute='value') | first
+           | regex_replace('^https://console-openshift-console.apps.', '')
+           | regex_replace('/.*$', '')) -}}
+  when:
+    - cluster_router_ip is not defined
+    - managed_cluster_info.resources | length > 0
+
+# Fallback: resolve the apps wildcard DNS if clusterClaim didn't help
+- name: Resolve router IP via DNS lookup
+  ansible.builtin.command:
+    cmd: "dig +short {{ cluster_name }}.apps.{{ domain }} A"
+  register: dns_resolve
+  changed_when: false
+  when: cluster_router_ip is not defined
+
+- name: Set router IP from DNS resolution
+  set_fact:
+    cluster_router_ip: "{{ dns_resolve.stdout_lines[0] }}"
+  when:
+    - cluster_router_ip is not defined
+    - dns_resolve is defined
+    - dns_resolve.stdout_lines | length > 0
+
+- name: Validate router IP was discovered
+  ansible.builtin.assert:
+    that:
+      - cluster_router_ip is defined
+      - cluster_router_ip | length > 0
+    fail_msg: >-
+      Could not determine cluster_router_ip for {{ cluster_name }}.
+      Set it manually in AAP inventory or extra_vars.
+
+# FIX #4 — Fetch TLS cert from cluster for F5 upload.
+# Reads the cert-manager-issued certificate Secret from the managed cluster.
+- name: Fetch OIDC proxy TLS certificate from managed cluster
+  kubernetes.core.k8s_info:
+    kind: Secret
+    name: oidc-proxy-tls
+    namespace: openshift-oidc-proxy
+    kubeconfig: "{{ kubeconfig_path | default(omit) }}"
+    host: "{{ cluster_api_url | default(omit) }}"
+    api_key: "{{ cluster_api_token | default(omit) }}"
+    validate_certs: "{{ validate_cluster_certs | default(true) }}"
+  register: tls_secret
+  when: f5_tls_cert_path is not defined
+
+- name: Write TLS cert and key to temp files
+  when:
+    - f5_tls_cert_path is not defined
+    - tls_secret.resources | length > 0
+  block:
+    - name: Write TLS certificate
+      ansible.builtin.copy:
+        content: "{{ tls_secret.resources[0].data['tls.crt'] | b64decode }}"
+        dest: "/tmp/oidc-tls-{{ cluster_name }}.crt"
+        mode: "0600"
+
+    - name: Write TLS private key
+      ansible.builtin.copy:
+        content: "{{ tls_secret.resources[0].data['tls.key'] | b64decode }}"
+        dest: "/tmp/oidc-tls-{{ cluster_name }}.key"
+        mode: "0600"
+      no_log: true
+
+    - name: Set cert paths from fetched data
+      set_fact:
+        f5_tls_cert_path: "/tmp/oidc-tls-{{ cluster_name }}.crt"
+        f5_tls_key_path: "/tmp/oidc-tls-{{ cluster_name }}.key"
+
+- name: Configure F5 BIG-IP virtual server
+  include_role:
+    name: f5_virtual_server
+  vars:
+    vs_name: "vs_oidc_{{ cluster_name }}"
+    vs_destination: "{{ f5_vip_address }}:443"
+    pool_name: "pool_oidc_{{ cluster_name }}"
+    pool_members:
+      - host: "{{ cluster_router_ip }}"
+        port: 443
+    health_monitor:
+      type: https
+      send: "GET /.well-known/openid-configuration HTTP/1.1\\r\\nHost: {{ oidc_hostname }}\\r\\n\\r\\n"
+      receive: "jwks_uri"
+
+- name: Create DNS record
+  include_role:
+    name: dns_record
+  vars:
+    record_name: "openshift-oidc-{{ cluster_name }}"
+    zone: "{{ domain }}"
+    record_type: A
+    record_value: "{{ f5_vip_address }}"
+
+- name: Register federated identity credential in Azure Entra
+  include_role:
+    name: azure_entra_federation
+  vars:
+    app_object_id: "{{ azure_app_object_id }}"
+    credential_name: "oidc-{{ cluster_name }}"
+    issuer: "{{ issuer_url }}"
+    subject: "system:serviceaccount:{{ workload_namespace }}:{{ workload_sa }}"
+    audience: "api://AzureADTokenExchange"
+
+- name: Create ConfigMap on cluster to signal readiness
+  include_role:
+    name: k8s_infra_status
+  vars:
+    configmap_name: oidc-external-infra-ready
+    configmap_namespace: openshift-oidc-proxy
+    target_cluster: "{{ cluster_name }}"
+    data:
+      f5_configured: "true"
+      dns_configured: "true"
+      entra_configured: "true"
+      configured_at: "{{ ansible_date_time.iso8601 }}"
+
+# Cleanup temp cert files
+- name: Remove temporary TLS files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/tmp/oidc-tls-{{ cluster_name }}.crt"
+    - "/tmp/oidc-tls-{{ cluster_name }}.key"
+  ignore_errors: true

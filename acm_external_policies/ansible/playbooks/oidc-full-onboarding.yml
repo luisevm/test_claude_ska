@@ -1,0 +1,17 @@
+---
+# Triggered by ACM PolicyAutomation.
+# ACM passes 'target_clusters' as a list of non-compliant cluster names.
+- name: Configure external infrastructure for OIDC workload identity
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    domain: "auth.mydomain.no"
+
+  tasks:
+    - name: Process each non-compliant cluster
+      include_tasks: per-cluster-setup.yml
+      loop: "{{ target_clusters }}"
+      loop_control:
+        loop_var: cluster_name

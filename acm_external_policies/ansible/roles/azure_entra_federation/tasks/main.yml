@@ -1,0 +1,22 @@
+---
+# Requires: azure.azcollection collection
+# Install: ansible-galaxy collection install azure.azcollection
+# Pip deps: azure-identity, azure-mgmt-authorization
+
+- name: Register federated identity credential
+  azure.azcollection.azure_rm_resource:
+    api_version: "2022-01-31-preview"
+    resource_group: "{{ azure_resource_group }}"
+    provider: "Microsoft.ManagedIdentity"
+    resource_type: "userAssignedIdentities"
+    resource_name: "{{ azure_managed_identity_name }}"
+    subresource:
+      - type: "federatedIdentityCredentials"
+        name: "{{ credential_name }}"
+    body:
+      properties:
+        issuer: "{{ issuer }}"
+        subject: "{{ subject }}"
+        audiences:
+          - "{{ audience }}"
+    state: present

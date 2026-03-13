@@ -1,0 +1,35 @@
+# FIX #6 — ACM 2.15 blocks ManagedClusterView from reading Secrets.
+# This ConfigurationPolicy uses object-templates-raw to read the
+# service-account-token Secret and mirror its data into a ConfigMap.
+# The ManagedClusterView then reads this ConfigMap instead of the Secret.
+#
+# The ConfigMap contains the same base64-encoded token and ca.crt data,
+# plus the cluster's API server URL extracted from the SA secret's namespace.
+#
+# Security note: In production, consider using ManagedServiceAccount
+# or ManifestWork statusFeedback instead of storing tokens in ConfigMaps.
+apiVersion: policy.open-cluster-management.io/v1
+kind: ConfigurationPolicy
+metadata:
+  name: internal-trust-token-mirror
+spec:
+  remediationAction: enforce
+  severity: medium
+  object-templates-raw: |
+    {{- $secret := (lookup "v1" "Secret" "platform-automation" "token-review-sa-token") }}
+    {{- if and $secret $secret.data (index $secret.data "token") }}
+    - complianceType: musthave
+      objectDefinition:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: token-review-sa-mirror
+          namespace: platform-automation
+          labels:
+            app.kubernetes.io/part-of: internal-trust
+            app.kubernetes.io/component: token-review
+            app.kubernetes.io/managed-by: acm-policy
+        data:
+          token: '{{ index $secret.data "token" }}'
+          ca.crt: '{{ index $secret.data "ca.crt" }}'
+    {{- end }}

@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oidc-proxy
+  namespace: openshift-oidc-proxy
+  labels:
+    app: oidc-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: oidc-proxy
+  template:
+    metadata:
+      labels:
+        app: oidc-proxy
+    spec:
+      serviceAccountName: oidc-proxy-sa
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: oidc-proxy
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: oidc-proxy
+          image: image-registry.openshift-image-registry.svc:5000/openshift-oidc-proxy/oidc-proxy:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            # ACM hub template — dynamically derives the cluster-specific issuer URL
+            - name: ISSUER_URL
+              value: '{{ (lookup "config.openshift.io/v1" "Infrastructure" "" "cluster").status.apiServerURL | replace "https://api." "https://openshift-oidc-" | replace ":6443" ".auth.mydomain.no" }}'
+            - name: REFRESH_INTERVAL
+              value: "300"
+          readinessProbe:
+            httpGet:
+              path: /.well-known/openid-configuration
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

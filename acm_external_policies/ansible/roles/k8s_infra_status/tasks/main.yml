@@ -1,0 +1,30 @@
+---
+# Creates a ConfigMap on the managed cluster to signal that external
+# infrastructure (F5, DNS, Entra) has been configured. This ConfigMap
+# is what ACM Policy 8 checks — once it exists, the policy goes Compliant
+# and the PolicyAutomation stops firing.
+#
+# Requires: kubernetes.core collection
+# Install: ansible-galaxy collection install kubernetes.core
+#
+# The kubeconfig for the target cluster can be obtained from ACM hub:
+#   oc get secret <cluster>-admin-kubeconfig -n <cluster> -o jsonpath='{.data.kubeconfig}' | base64 -d
+# Or configure a credential in AAP that maps to the target cluster.
+
+- name: Create external infra readiness ConfigMap on managed cluster
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path | default(omit) }}"
+    host: "{{ cluster_api_url | default(omit) }}"
+    api_key: "{{ cluster_api_token | default(omit) }}"
+    validate_certs: "{{ validate_cluster_certs | default(true) }}"
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ configmap_name }}"
+        namespace: "{{ configmap_namespace }}"
+        labels:
+          app.kubernetes.io/managed-by: ansible-automation-platform
+          app.kubernetes.io/part-of: oidc-workload-identity
+      data: "{{ data }}"

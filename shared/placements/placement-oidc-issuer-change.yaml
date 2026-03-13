@@ -1,0 +1,30 @@
+# FIX #2 — Separate gated placement for the destructive serviceAccountIssuer change.
+# Requires BOTH labels to match, preventing accidental issuer changes.
+# Onboarding workflow:
+#   1. Label cluster: oidc-federation=enabled  → deploys proxy, route, RBAC, certs
+#   2. Wait for Policy 8 (external-infra-check) to go Compliant
+#   3. Label cluster: oidc-issuer-change=approved  → triggers API server restart
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: placement-oidc-issuer-change
+  namespace: acm-policies
+spec:
+  clusterSets:
+    - all-openshift-clusters
+  predicates:
+    - requiredClusterSelector:
+        labelSelector:
+          matchExpressions:
+            - key: oidc-federation
+              operator: In
+              values:
+                - "enabled"
+            - key: oidc-issuer-change
+              operator: In
+              values:
+                - "approved"
+            - key: vendor
+              operator: In
+              values:
+                - "OpenShift"

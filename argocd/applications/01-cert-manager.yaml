@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: acm-cert-manager-policies
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # REPLACE: with your Git repository URL
+    repoURL: https://git.mydomain.no/platform/acm-workload-identity.git
+    targetRevision: main
+    path: acm_cert_manager
+    plugin:
+      name: kustomize-policygenerator
+      env:
+        - name: KUSTOMIZE_BUILD_OPTIONS
+          value: "--enable-alpha-plugins"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: acm-policies
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

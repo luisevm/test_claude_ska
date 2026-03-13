@@ -1,0 +1,111 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: PolicyGenerator
+metadata:
+  name: oidc-workload-identity
+
+placementBindingDefaults:
+  name: binding-oidc-workload-identity
+
+policyDefaults:
+  namespace: acm-policies
+  remediationAction: enforce
+  severity: medium
+  complianceType: musthave
+  generatePolicyPlacement: false
+  generatePlacementWhenInSet: false
+  placement:
+    placementName: placement-oidc-federation
+  policySets:
+    - oidc-workload-identity
+  # FIX #10 — Reduced compliant interval from 30m to 10m for faster
+  # detection of drift (deleted resources, changed config).
+  evaluationInterval:
+    compliant: 10m
+    noncompliant: 5m
+  configurationPolicyAnnotations:
+    policy.open-cluster-management.io/trigger-update: "1"
+
+policies:
+
+  # --- Policy 1: Namespace ---
+  - name: oidc-proxy-namespace
+    manifests:
+      - path: manifests/01-namespace.yaml
+
+  # --- Policy 2: RBAC (ServiceAccount + ClusterRole + Binding) ---
+  - name: oidc-proxy-rbac
+    manifests:
+      - path: manifests/02-serviceaccount.yaml
+      - path: manifests/03-clusterrole.yaml
+      - path: manifests/04-clusterrolebinding.yaml
+
+  # --- Policy 3: Deployment + Service ---
+  - name: oidc-proxy-deployment
+    manifests:
+      - path: manifests/05-deployment.yaml
+      - path: manifests/06-service.yaml
+
+  # --- Policy 4: Route ---
+  - name: oidc-proxy-route
+    manifests:
+      - path: manifests/07-route.yaml
+
+  # --- Policy 5: Authentication CR (issuer change) ---
+  # FIX #2 — Uses separate gated placement requiring oidc-issuer-change=approved label.
+  # Moved to its own PolicySet so it has independent placement binding.
+  - name: oidc-issuer-config
+    severity: high
+    placement:
+      placementName: placement-oidc-issuer-change
+    policySets:
+      - oidc-issuer-change
+    manifests:
+      - path: manifests/08-authentication-cr.yaml
+        complianceType: musthave
+
+  # --- Policy 6: cert-manager Certificate ---
+  - name: oidc-cert-manager
+    manifests:
+      - path: manifests/09-cert-manager-certificate.yaml
+
+  # --- Policy 7: Certificate expiry monitoring ---
+  - name: oidc-certificate-monitoring
+    remediationAction: inform
+    severity: high
+    # FIX #10 — Cert expiry is time-sensitive; check every 10m even when compliant.
+    evaluationInterval:
+      compliant: 10m
+      noncompliant: 5m
+    manifests:
+      - path: manifests/10-certificate-policy.yaml
+
+  # --- Policy 8: External infra readiness check (inform only) ---
+  - name: oidc-external-infra-check
+    remediationAction: inform
+    severity: high
+    manifests:
+      - path: manifests/11-external-infra-check.yaml
+
+policySets:
+  - name: oidc-workload-identity
+    description: >-
+      Deploys and enforces the OIDC proxy infrastructure required for
+      Azure Entra workload identity federation on all labeled clusters.
+    policies:
+      - oidc-proxy-namespace
+      - oidc-proxy-rbac
+      - oidc-proxy-deployment
+      - oidc-proxy-route
+      - oidc-cert-manager
+      - oidc-certificate-monitoring
+      - oidc-external-infra-check
+  # FIX #2 — Separate PolicySet for the destructive issuer change.
+  - name: oidc-issuer-change
+    description: >-
+      Gated issuer change policy. Only applied to clusters with
+      oidc-issuer-change=approved label. Triggers API server restart.
+    policies:
+      - oidc-issuer-config
+
+policySetDefaults:
+  generatePolicySetPlacement: false

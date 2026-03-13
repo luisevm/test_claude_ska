@@ -1,0 +1,169 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: PolicyGenerator
+metadata:
+  name: internal-trust
+
+placementBindingDefaults:
+  name: binding-internal-trust
+
+policyDefaults:
+  namespace: acm-policies
+  remediationAction: enforce
+  severity: medium
+  complianceType: musthave
+  generatePolicyPlacement: false
+  generatePlacementWhenInSet: false
+  # FIX #10 — Reduced compliant interval from 30m to 10m.
+  # Token propagation and cluster views are time-sensitive for new clusters.
+  evaluationInterval:
+    compliant: 10m
+    noncompliant: 5m
+  configurationPolicyAnnotations:
+    policy.open-cluster-management.io/trigger-update: "1"
+
+policies:
+
+  # ══════════════════════════════════════════════════════════
+  #  OPERATOR-SIDE POLICIES (deployed to operator clusters)
+  # ══════════════════════════════════════════════════════════
+
+  # --- Policy 1: Namespace for platform automation ---
+  - name: internal-trust-operator-namespace
+    placement:
+      placementName: placement-internal-trust-operator
+    policySets:
+      - internal-trust-operator-infra
+    manifests:
+      - path: manifests/operator-side/01-namespace.yaml
+
+  # --- Policy 2: Token-review infrastructure ---
+  - name: internal-trust-tokenreview
+    placement:
+      placementName: placement-internal-trust-operator
+    policySets:
+      - internal-trust-operator-infra
+    manifests:
+      - path: manifests/operator-side/02-tokenreview-serviceaccount.yaml
+      - path: manifests/operator-side/03-tokenreview-clusterrolebinding.yaml
+      - path: manifests/operator-side/04-tokenreview-token-secret.yaml
+      - path: manifests/operator-side/04b-tokenreview-token-configmap.yaml
+
+  # --- Policy 3: Operator RBAC ---
+  - name: internal-trust-operator-rbac
+    placement:
+      placementName: placement-internal-trust-operator
+    policySets:
+      - internal-trust-operator-infra
+    manifests:
+      - path: manifests/operator-side/05-operator-serviceaccount.yaml
+      - path: manifests/operator-side/06-operator-clusterrole.yaml
+      - path: manifests/operator-side/07-operator-clusterrolebinding.yaml
+
+  # --- Policy 4: Operator deployment (with projected SA token) ---
+  - name: internal-trust-operator-deployment
+    placement:
+      placementName: placement-internal-trust-operator
+    policySets:
+      - internal-trust-operator-infra
+    manifests:
+      - path: manifests/operator-side/08-operator-deployment.yaml
+
+  # ══════════════════════════════════════════════════════════
+  #  HUB-SIDE POLICY (deployed to local-cluster / ACM hub)
+  # ══════════════════════════════════════════════════════════
+
+  # --- Policy 5: Create ManagedClusterViews for token retrieval ---
+  - name: internal-trust-cluster-views
+    placement:
+      placementName: placement-hub
+    policySets:
+      - internal-trust-hub-infra
+    manifests:
+      - path: manifests/hub-side/01-managedclusterview-creator.yaml
+
+  # ══════════════════════════════════════════════════════════
+  #  SERVICE-SIDE POLICIES (deployed to the service cluster)
+  # ══════════════════════════════════════════════════════════
+
+  # --- Policy 6: Service namespace + ServiceAccount ---
+  - name: internal-trust-service-namespace
+    placement:
+      placementName: placement-internal-trust-service
+    policySets:
+      - internal-trust-service-infra
+    manifests:
+      - path: manifests/service-side/01-namespace.yaml
+      - path: manifests/service-side/02-serviceaccount.yaml
+
+  # --- Policy 7: Service deployment + Service ---
+  - name: internal-trust-service-deployment
+    placement:
+      placementName: placement-internal-trust-service
+    policySets:
+      - internal-trust-service-infra
+    manifests:
+      - path: manifests/service-side/03-deployment.yaml
+      - path: manifests/service-side/04-service.yaml
+
+  # --- Policy 8: Token propagation (hub templates + object-templates-raw) ---
+  - name: internal-trust-token-propagation
+    severity: high
+    placement:
+      placementName: placement-internal-trust-service
+    policySets:
+      - internal-trust-service-infra
+    # FIX #10 — Token propagation is the most time-sensitive policy.
+    # New operator clusters should be integrated within 10 minutes.
+    evaluationInterval:
+      compliant: 10m
+      noncompliant: 5m
+    manifests:
+      - path: manifests/service-side/06-token-propagation.yaml
+
+  # --- Policy 9: Token sync canary check (inform only) ---
+  - name: internal-trust-token-sync-check
+    remediationAction: inform
+    severity: high
+    placement:
+      placementName: placement-internal-trust-service
+    policySets:
+      - internal-trust-service-infra
+    manifests:
+      - path: manifests/service-side/05-token-sync-check.yaml
+
+policySets:
+  - name: internal-trust-operator-infra
+    description: >-
+      Deploys operator-side trust infrastructure to all labeled
+      operator clusters: namespace, token-review SA with
+      system:auth-delegator binding, long-lived token Secret,
+      operator SA + RBAC, and operator Deployment with projected
+      SA token (PSAT).
+    policies:
+      - internal-trust-operator-namespace
+      - internal-trust-tokenreview
+      - internal-trust-operator-rbac
+      - internal-trust-operator-deployment
+
+  - name: internal-trust-hub-infra
+    description: >-
+      Hub-side policy that creates ManagedClusterViews to read
+      token-review Secrets from operator clusters, making them
+      available for hub-template-based propagation to the service
+      cluster.
+    policies:
+      - internal-trust-cluster-views
+
+  - name: internal-trust-service-infra
+    description: >-
+      Deploys the central platform service and propagates review
+      tokens from operator clusters using hub templates and
+      object-templates-raw. No Ansible or external systems needed.
+    policies:
+      - internal-trust-service-namespace
+      - internal-trust-service-deployment
+      - internal-trust-token-propagation
+      - internal-trust-token-sync-check
+
+policySetDefaults:
+  generatePolicySetPlacement: false

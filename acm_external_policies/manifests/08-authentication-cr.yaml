@@ -1,0 +1,22 @@
+# WARNING: Changing serviceAccountIssuer causes API server pods to restart
+# and invalidates existing SA tokens. Plan for a transition period.
+#
+# FIX #2 — Gated issuer change:
+#   This policy uses its own placement (placement-oidc-issuer-change) which
+#   requires BOTH labels: oidc-federation=enabled AND oidc-issuer-change=approved.
+#   This prevents accidental application — an operator must explicitly approve
+#   the issuer change per cluster after verifying pre-conditions:
+#     oc label managedcluster <name> oidc-issuer-change=approved
+#
+#   Pre-flight checklist before approving:
+#   - Confirm maintenance window is active
+#   - Verify all workloads support token refresh (no hardcoded tokens)
+#   - Ensure OIDC proxy is healthy and serving /.well-known/openid-configuration
+#   - Ensure F5 + DNS + Entra are configured (Policy 8 is Compliant)
+#   - Have rollback plan: remove the label to stop enforcement
+apiVersion: config.openshift.io/v1
+kind: Authentication
+metadata:
+  name: cluster
+spec:
+  serviceAccountIssuer: '{{ (lookup "config.openshift.io/v1" "Infrastructure" "" "cluster").status.apiServerURL | replace "https://api." "https://openshift-oidc-" | replace ":6443" ".auth.mydomain.no" }}'

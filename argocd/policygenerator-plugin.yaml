@@ -1,0 +1,60 @@
+# ArgoCD ConfigManagementPlugin for PolicyGenerator support.
+#
+# This plugin enables ArgoCD to run `kustomize build --enable-alpha-plugins`
+# which is required for the ACM PolicyGenerator Kustomize plugin.
+#
+# There are TWO ways to install this plugin:
+#
+# ─────────────────────────────────────────────────────────────
+# Option A: Sidecar plugin (ArgoCD 2.6+, recommended)
+# ─────────────────────────────────────────────────────────────
+# Apply this ConfigMap, then patch the argocd-repo-server Deployment
+# to add the sidecar container. See the DEPLOYMENT_GUIDE.md for details.
+#
+# ─────────────────────────────────────────────────────────────
+# Option B: OpenShift GitOps with built-in PolicyGenerator
+# ─────────────────────────────────────────────────────────────
+# If using Red Hat OpenShift GitOps 1.12+, the PolicyGenerator plugin
+# is pre-installed. You only need to enable it in the ArgoCD CR:
+#
+#   apiVersion: argoproj.io/v1beta1
+#   kind: ArgoCD
+#   metadata:
+#     name: openshift-gitops
+#     namespace: openshift-gitops
+#   spec:
+#     kustomizeBuildOptions: "--enable-alpha-plugins"
+#
+# With this approach, the child Applications can use standard kustomize
+# source type instead of the plugin source type.
+# ─────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kustomize-policygenerator
+  namespace: openshift-gitops
+data:
+  plugin.yaml: |
+    apiVersion: argoproj.io/v1alpha1
+    kind: ConfigManagementPlugin
+    metadata:
+      name: kustomize-policygenerator
+    spec:
+      version: v1.0
+      init:
+        command: [sh, -c]
+        args:
+          - |
+            # Verify PolicyGenerator binary is available
+            if ! command -v PolicyGenerator &> /dev/null; then
+              echo "WARNING: PolicyGenerator binary not found in PATH"
+              echo "Ensure the ArgoCD repo-server has the PolicyGenerator plugin installed"
+            fi
+      generate:
+        command: [sh, -c]
+        args:
+          - |
+            kustomize build --enable-alpha-plugins .
+      discover:
+        find:
+          glob: "**/policy-generator-config.yaml"

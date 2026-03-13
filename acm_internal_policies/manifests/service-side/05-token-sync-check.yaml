@@ -1,0 +1,26 @@
+# Canary policy: checks that the Ansible token-sync has run.
+# When the ConfigMap is missing, the policy goes NonCompliant
+# and triggers PolicyAutomation to run the token-sync Ansible playbook.
+#
+# Ansible creates this ConfigMap after successfully propagating
+# review tokens from operator clusters to the service cluster.
+apiVersion: policy.open-cluster-management.io/v1
+kind: ConfigurationPolicy
+metadata:
+  name: internal-trust-token-sync-status
+spec:
+  remediationAction: inform
+  severity: high
+  namespaceSelector:
+    include:
+      - platform-services
+  object-templates:
+    - complianceType: musthave
+      objectDefinition:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: token-sync-ready
+          namespace: platform-services
+        data:
+          tokens_synced: "true"

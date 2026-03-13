@@ -1,0 +1,16 @@
+# Binds the token-review SA to the built-in system:auth-delegator ClusterRole.
+# system:auth-delegator grants permission to create TokenReview and
+# SubjectAccessReview requests — this is what the central service needs
+# to validate opaque PSATs presented by operators on this cluster.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-automation-token-review
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: token-review-sa
+    namespace: platform-automation

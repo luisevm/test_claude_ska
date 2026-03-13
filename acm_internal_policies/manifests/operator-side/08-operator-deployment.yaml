@@ -1,0 +1,57 @@
+# The operator uses a projected service account token (PSAT) to authenticate
+# against the central platform service. The token is short-lived (1 hour)
+# and scoped to a specific audience ("platform-services").
+#
+# From the central service's perspective, this token is OPAQUE — the service
+# cannot validate it locally. Instead, it performs a TokenReview against
+# this cluster's API server using the long-lived token-review-sa token.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dataclassification-agent
+  namespace: platform-automation
+  labels:
+    app: dataclassification-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dataclassification-agent
+  template:
+    metadata:
+      labels:
+        app: dataclassification-agent
+    spec:
+      serviceAccountName: dataclassification-agent
+      containers:
+        - name: agent
+          # REPLACE: with your actual operator image
+          image: registry.mydomain.no/platform/dataclassification-agent:latest
+          env:
+            # URL of the central platform service
+            # REPLACE: with your actual service URL
+            - name: PLATFORM_SERVICE_URL
+              value: "https://platform-integration-service.platform-services.svc.cluster.local:8443"
+            - name: TOKEN_PATH
+              value: "/var/run/secrets/platform-services/token"
+          volumeMounts:
+            - name: psat-token
+              mountPath: /var/run/secrets/platform-services
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        # Projected SA token with audience scoped to the platform service.
+        # This token is short-lived (3600s = 1 hour) and auto-rotated by kubelet.
+        - name: psat-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: "platform-services"
+                  expirationSeconds: 3600
+                  path: token

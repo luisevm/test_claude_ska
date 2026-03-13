@@ -1,0 +1,20 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: oidc-proxy
+  namespace: openshift-oidc-proxy
+  annotations:
+    cert-manager.io/issuer-name: letsencrypt-prod
+    cert-manager.io/issuer-kind: ClusterIssuer
+spec:
+  # ACM hub template — dynamically derives the cluster-specific hostname
+  host: '{{ (lookup "config.openshift.io/v1" "Infrastructure" "" "cluster").status.apiServerURL | replace "https://api." "openshift-oidc-" | replace ":6443" ".auth.mydomain.no" }}'
+  to:
+    kind: Service
+    name: oidc-proxy
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

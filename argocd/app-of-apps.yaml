@@ -1,0 +1,39 @@
+# App of Apps — deploy this single Application to bootstrap all ACM policies.
+#
+# This parent Application manages the child Applications in argocd/applications/.
+# ArgoCD sync waves ensure correct ordering:
+#   Wave 0: shared resources (Placements, ManagedClusterSetBinding)
+#   Wave 1: cert-manager operator policies (prerequisite for external trust)
+#   Wave 2: external trust + internal trust policies (can deploy in parallel)
+#
+# Usage:
+#   oc apply -f argocd/app-of-apps.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: acm-workload-identity
+  namespace: openshift-gitops
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # REPLACE: with your Git repository URL
+    repoURL: https://git.mydomain.no/platform/acm-workload-identity.git
+    targetRevision: main
+    path: argocd/applications
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openshift-gitops
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 3m

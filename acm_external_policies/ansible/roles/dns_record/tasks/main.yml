@@ -1,0 +1,71 @@
+---
+# FIX #3 — Implemented DNS role with selectable provider.
+#
+# Set dns_provider in group_vars/all.yml to one of: infoblox, azure, nsupdate
+# Each provider requires its own credentials (see comments below).
+#
+# Expected input variables:
+#   record_name: "openshift-oidc-<clustername>"
+#   zone: "auth.mydomain.no"
+#   record_type: A
+#   record_value: "<f5-vip-address>"
+#   dns_provider: "infoblox" | "azure" | "nsupdate"
+
+- name: Validate dns_provider is set
+  ansible.builtin.assert:
+    that:
+      - dns_provider is defined
+      - dns_provider in ['infoblox', 'azure', 'nsupdate']
+    fail_msg: >-
+      dns_provider must be set to one of: infoblox, azure, nsupdate.
+      Set it in group_vars/all.yml or pass as extra_vars.
+
+# --- Option 1: Infoblox (community.general) ---
+# Requires: infoblox_host, infoblox_user, infoblox_password
+- name: Create DNS A record (Infoblox)
+  community.general.nios_a_record:
+    name: "{{ record_name }}.{{ zone }}"
+    ipv4addr: "{{ record_value }}"
+    state: present
+    provider:
+      host: "{{ infoblox_host }}"
+      username: "{{ infoblox_user }}"
+      password: "{{ infoblox_password }}"
+  when: dns_provider == "infoblox"
+
+# --- Option 2: Azure DNS (azure.azcollection) ---
+# Requires: dns_resource_group (Azure resource group containing the DNS zone)
+- name: Create DNS A record (Azure DNS)
+  azure.azcollection.azure_rm_dnsrecordset:
+    resource_group: "{{ dns_resource_group }}"
+    zone_name: "{{ zone }}"
+    relative_name: "{{ record_name }}"
+    record_type: A
+    records:
+      - entry: "{{ record_value }}"
+    state: present
+  when: dns_provider == "azure"
+
+# --- Option 3: nsupdate (RFC 2136 dynamic DNS) ---
+# Requires: dns_tsig_key_name, dns_tsig_key_secret, dns_server
+- name: Create DNS A record (nsupdate)
+  community.general.nsupdate:
+    key_name: "{{ dns_tsig_key_name }}"
+    key_secret: "{{ dns_tsig_key_secret }}"
+    key_algorithm: "hmac-sha256"
+    server: "{{ dns_server }}"
+    zone: "{{ zone }}"
+    record: "{{ record_name }}"
+    type: "{{ record_type }}"
+    value: "{{ record_value }}"
+    state: present
+  when: dns_provider == "nsupdate"
+
+- name: Verify DNS record resolves
+  ansible.builtin.command:
+    cmd: "dig +short {{ record_name }}.{{ zone }} A"
+  register: dns_check
+  retries: 6
+  delay: 10
+  until: record_value in dns_check.stdout
+  changed_when: false

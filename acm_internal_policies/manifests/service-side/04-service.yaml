@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-integration-service
+  namespace: platform-services
+spec:
+  selector:
+    app: platform-integration-service
+  ports:
+    - port: 8443
+      targetPort: 8443
+      name: https

@@ -1,0 +1,63 @@
+---
+# REPLACE: All values marked with <REPLACE:> must be customized for your environment.
+
+# ──── Domain ────
+domain: "auth.mydomain.no"
+
+# ──── F5 BIG-IP ────
+f5_host: "<REPLACE: f5-management-ip-or-fqdn>"
+f5_user: "<REPLACE: f5-admin-username>"
+f5_password: "<REPLACE: f5-admin-password>"
+f5_vip_address: "<REPLACE: e.g. 10.0.100.50>"
+
+# ──── F5 TLS certificates (FIX #4) ────
+# Option A: Automatically fetched from cluster's cert-manager Secret (default).
+#   The playbook reads the oidc-proxy-tls Secret from the managed cluster
+#   and uploads it to F5. No manual paths needed.
+#
+# Option B: Pre-existing local files (set these to skip auto-fetch).
+# f5_tls_cert_path: "<path-to-cert.pem>"
+# f5_tls_key_path: "<path-to-key.pem>"
+
+# ──── DNS Provider (FIX #3) ────
+# Choose one of: infoblox, azure, nsupdate
+dns_provider: "<REPLACE: infoblox|azure|nsupdate>"
+
+# Provider-specific vars (uncomment the section matching your dns_provider):
+
+# --- Infoblox ---
+# infoblox_host: "<REPLACE: infoblox-grid-master>"
+# infoblox_user: "<REPLACE: infoblox-username>"
+# infoblox_password: "<REPLACE: infoblox-password>"
+
+# --- Azure DNS ---
+# dns_resource_group: "<REPLACE: azure-resource-group-with-dns-zone>"
+
+# --- nsupdate (RFC 2136) ---
+# dns_server: "<REPLACE: dns-server-ip>"
+# dns_tsig_key_name: "<REPLACE: tsig-key-name>"
+# dns_tsig_key_secret: "<REPLACE: tsig-key-secret>"
+
+# ──── Azure Entra / Managed Identity ────
+azure_tenant_id: "<REPLACE: your-azure-tenant-id>"
+azure_app_object_id: "<REPLACE: app-registration-object-id>"
+azure_managed_identity_name: "<REPLACE: user-assigned-managed-identity-name>"
+azure_resource_group: "<REPLACE: resource-group-containing-managed-identity>"
+
+# ──── Workload identity subject ────
+workload_namespace: "<REPLACE: namespace-of-workload-service-account>"
+workload_sa: "<REPLACE: service-account-name>"
+
+# ──── Cluster access (for creating ConfigMap on managed clusters) ────
+# Option A: kubeconfig file path (set in AAP credential or machine credential)
+# kubeconfig_path: "/tmp/kubeconfig-{{ cluster_name }}"
+#
+# Option B: API URL + token (set per cluster in AAP inventory or extra_vars)
+# cluster_api_url: "https://api.{{ cluster_name }}.example.com:6443"
+# cluster_api_token: "<obtained-from-acm-hub-or-aap-credential>"
+validate_cluster_certs: true
+
+# ──── Router IPs (FIX #9) ────
+# Auto-discovered from ACM hub ManagedCluster status by default.
+# Override per cluster in AAP inventory or extra_vars if auto-discovery fails:
+# cluster_router_ip: "<set per cluster in inventory or extra_vars>"

@@ -1,0 +1,84 @@
+# Policy A — deployed to local-cluster (the ACM hub).
+#
+# Uses object-templates-raw to iterate over all ManagedClusters labeled
+# internal-trust=operator and creates:
+#   1. A ManagedClusterView per operator cluster to read the token-review-sa-mirror ConfigMap
+#      (FIX #6: ACM 2.15 blocks ManagedClusterView from reading Secrets)
+#   2. Per-cluster Secrets in acm-policies namespace with token data, CA cert, and API URL
+#   3. A ConfigMap "operator-clusters-registry" listing all operator cluster names
+#
+# FIX #5 — ACM 2.15 blocks both cluster-scoped lookups AND cross-namespace
+# lookups in hub templates. Policy A (regular templates on local-cluster)
+# CAN do unrestricted lookups, so it copies ALL data into the acm-policies
+# namespace where Policy B can read it via hub templates.
+apiVersion: policy.open-cluster-management.io/v1
+kind: ConfigurationPolicy
+metadata:
+  name: internal-trust-create-cluster-views
+spec:
+  remediationAction: enforce
+  severity: medium
+  object-templates-raw: |
+    {{- $clusterNames := list }}
+    {{- range $mc := (lookup "cluster.open-cluster-management.io/v1" "ManagedCluster" "" "").items }}
+    {{- if and (hasKey $mc.metadata.labels "internal-trust") (eq (index $mc.metadata.labels "internal-trust") "operator") }}
+    {{- $clusterNames = append $clusterNames $mc.metadata.name }}
+    {{- $apiURL := "" }}
+    {{- range $claim := $mc.status.clusterClaims }}
+    {{- if or (eq $claim.name "kubeapiserver.open-cluster-management.io") (eq $claim.name "apiserverurl.openshift.io") }}
+    {{- $apiURL = $claim.value }}
+    {{- end }}
+    {{- end }}
+    - complianceType: musthave
+      objectDefinition:
+        apiVersion: view.open-cluster-management.io/v1beta1
+        kind: ManagedClusterView
+        metadata:
+          name: view-token-review-mirror
+          namespace: {{ $mc.metadata.name }}
+          labels:
+            app.kubernetes.io/part-of: internal-trust
+            app.kubernetes.io/managed-by: acm-policy
+        spec:
+          scope:
+            apiGroup: ""
+            kind: ConfigMap
+            version: v1
+            name: token-review-sa-mirror
+            namespace: platform-automation
+    {{- /* Read the ManagedClusterView status to get the token data */ -}}
+    {{- $view := (lookup "view.open-cluster-management.io/v1beta1" "ManagedClusterView" $mc.metadata.name "view-token-review-mirror") }}
+    {{- if and $view $view.status $view.status.result $view.status.result.data }}
+    - complianceType: musthave
+      objectDefinition:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: hub-copy-token-{{ $mc.metadata.name }}
+          namespace: acm-policies
+          labels:
+            app.kubernetes.io/part-of: internal-trust
+            app.kubernetes.io/managed-by: acm-policy
+            internal-trust/cluster: {{ $mc.metadata.name }}
+        type: Opaque
+        data:
+          token: '{{ index $view.status.result.data "token" }}'
+          ca.crt: '{{ index $view.status.result.data "ca.crt" }}'
+        stringData:
+          api-url: '{{ $apiURL }}'
+          cluster-name: '{{ $mc.metadata.name }}'
+    {{- end }}
+    {{- end }}
+    {{- end }}
+    - complianceType: musthave
+      objectDefinition:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: operator-clusters-registry
+          namespace: acm-policies
+          labels:
+            app.kubernetes.io/part-of: internal-trust
+            app.kubernetes.io/managed-by: acm-policy
+        data:
+          cluster-names: '{{ $clusterNames | join "," }}'

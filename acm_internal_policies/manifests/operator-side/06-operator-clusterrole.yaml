@@ -1,0 +1,22 @@
+# Permissions the operator needs for its own workload.
+# This example grants read access to namespaces — the
+# dataclassification-agent needs to watch namespace events
+# and report metadata to the central service.
+# REPLACE: Adjust rules to match your operator's actual requirements.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dataclassification-agent
+rules:
+  - apiGroups: [""]
+    resources:
+      - namespaces
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: [""]
+    resources:
+      - namespaces/status
+    verbs:
+      - get

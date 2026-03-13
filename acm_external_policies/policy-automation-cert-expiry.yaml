@@ -1,0 +1,20 @@
+# FIX #8 — Changed mode from everyEvent to once.
+#   Cert expiry alerts should fire once per transition, not every 24h while stale.
+#   To re-trigger, reset the PolicyAutomation status.
+apiVersion: policy.open-cluster-management.io/v1beta1
+kind: PolicyAutomation
+metadata:
+  name: oidc-cert-expiry-automation
+  namespace: acm-policies
+spec:
+  policyRef: oidc-certificate-monitoring
+  mode: once
+  automationDef:
+    name: OIDC-Certificate-Expiry-Alert
+    secret: aap-credentials
+    type: AnsibleJob
+    extra_vars:
+      alert_channel: "#platform-alerts"
+      severity: "high"
+      escalation_hours: 48
+    delayAfterRunSeconds: 86400

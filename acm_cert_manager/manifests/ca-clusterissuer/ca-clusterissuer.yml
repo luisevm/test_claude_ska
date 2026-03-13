@@ -1,0 +1,11 @@
+---
+# Example CA-based ClusterIssuer.
+# For production, replace with your actual ClusterIssuer
+# (e.g., ACME/Let's Encrypt, Venafi, or your internal PKI).
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: ca-clusterissuer
+spec:
+  ca:
+    secretName: ca-clusterissuer-tls

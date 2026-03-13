@@ -1,0 +1,40 @@
+---
+apiVersion: policy.open-cluster-management.io/v1beta1
+kind: OperatorPolicy
+metadata:
+  name: cert-manager-operator-install
+spec:
+  complianceType: musthave
+  complianceConfig:
+    catalogSourceUnhealthy: NonCompliant
+    deploymentsUnavailable: NonCompliant
+    upgradesAvailable: Compliant
+  remediationAction: enforce
+  removalBehavior:
+    clusterServiceVersions: Delete
+    customResourceDefinitions: Delete
+    operatorGroups: DeleteIfUnused
+    subscriptions: Delete
+  severity: critical
+  upgradeApproval: Automatic
+  subscription:
+    # FIX #12 — Channel version matrix for cert-manager Operator.
+    # Match the channel to your OCP version:
+    #   OCP 4.14 → stable-v1.13 or stable-v1.14
+    #   OCP 4.15 → stable-v1.14 or stable-v1.15
+    #   OCP 4.16 → stable-v1.15 or stable-v1.16
+    #   OCP 4.17 → stable-v1.16 or stable-v1.17
+    #   OCP 4.18 → stable-v1.17 or stable-v1.18
+    # Always verify against:
+    #   https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html-single/security_and_compliance/index#cert-manager-operator-for-red-hat-openshift
+    #
+    # REPLACE: set the channel matching your OCP version
+    channel: stable-v1.18
+    name: openshift-cert-manager-operator
+    namespace: cert-manager-operator
+    source: redhat-operators
+    sourceNamespace: openshift-marketplace
+    config:
+      env:
+        - name: TRUSTED_CA_CONFIGMAP_NAME
+          value: trusted-ca

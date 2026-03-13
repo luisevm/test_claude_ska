@@ -1,0 +1,7 @@
+# Secrets — never commit credentials to git
+secrets/*.yaml
+secrets/*.yml
+!secrets/*.template
+
+# Kustomize build output
+output/

@@ -1,0 +1,102 @@
+---
+# Requires: f5networks.f5_modules collection
+# Install: ansible-galaxy collection install f5networks.f5_modules
+#
+# FIX #4 — F5 TLS certificate provisioning:
+#   Added tasks to upload TLS cert+key to F5 and create a client SSL profile
+#   before creating the virtual server. Certificates can come from:
+#   - cert-manager (fetched from cluster) via f5_tls_cert_path / f5_tls_key_path
+#   - Pre-existing files on the Ansible controller
+#
+#   Required new variables:
+#     f5_tls_cert_path: local path to TLS certificate (PEM)
+#     f5_tls_key_path:  local path to TLS private key (PEM)
+
+- name: Upload TLS certificate to F5
+  f5networks.f5_modules.bigip_ssl_certificate:
+    name: "{{ oidc_hostname }}"
+    content: "{{ lookup('file', f5_tls_cert_path) }}"
+    state: present
+    provider:
+      server: "{{ f5_host }}"
+      user: "{{ f5_user }}"
+      password: "{{ f5_password }}"
+      validate_certs: true
+
+- name: Upload TLS private key to F5
+  f5networks.f5_modules.bigip_ssl_key:
+    name: "{{ oidc_hostname }}"
+    content: "{{ lookup('file', f5_tls_key_path) }}"
+    state: present
+    provider:
+      server: "{{ f5_host }}"
+      user: "{{ f5_user }}"
+      password: "{{ f5_password }}"
+      validate_certs: true
+  no_log: true
+
+- name: Create client SSL profile
+  f5networks.f5_modules.bigip_profile_client_ssl:
+    name: "clientssl_oidc_{{ cluster_name }}"
+    cert_key_chain:
+      - cert: "/Common/{{ oidc_hostname }}"
+        key: "/Common/{{ oidc_hostname }}"
+    parent: /Common/clientssl
+    provider:
+      server: "{{ f5_host }}"
+      user: "{{ f5_user }}"
+      password: "{{ f5_password }}"
+      validate_certs: true
+
+- name: Create HTTPS health monitor
+  f5networks.f5_modules.bigip_monitor_https:
+    name: "https_oidc_{{ cluster_name }}"
+    send: "{{ health_monitor.send }}"
+    receive: "{{ health_monitor.receive }}"
+    interval: 30
+    timeout: 91
+    provider:
+      server: "{{ f5_host }}"
+      user: "{{ f5_user }}"
+      password: "{{ f5_password }}"
+      validate_certs: true
+
+- name: Create F5 pool
+  f5networks.f5_modules.bigip_pool:
+    name: "{{ pool_name }}"
+    lb_method: round-robin
+    monitors:
+      - /Common/https_oidc_{{ cluster_name }}
+    provider:
+      server: "{{ f5_host }}"
+      user: "{{ f5_user }}"
+      password: "{{ f5_password }}"
+      validate_certs: true
+
+- name: Add pool members
+  f5networks.f5_modules.bigip_pool_member:
+    pool: "{{ pool_name }}"
+    host: "{{ item.host }}"
+    port: "{{ item.port }}"
+    provider:
+      server: "{{ f5_host }}"
+      user: "{{ f5_user }}"
+      password: "{{ f5_password }}"
+      validate_certs: true
+  loop: "{{ pool_members }}"
+
+- name: Create virtual server
+  f5networks.f5_modules.bigip_virtual_server:
+    name: "{{ vs_name }}"
+    destination: "{{ vs_destination }}"
+    pool: "{{ pool_name }}"
+    snat: automap
+    profiles:
+      - name: "clientssl_oidc_{{ cluster_name }}"
+        context: client-side
+      - http
+    provider:
+      server: "{{ f5_host }}"
+      user: "{{ f5_user }}"
+      password: "{{ f5_password }}"
+      validate_certs: true

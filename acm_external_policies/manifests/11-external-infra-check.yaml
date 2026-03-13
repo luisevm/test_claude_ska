@@ -1,0 +1,25 @@
+# Canary policy: checks for a ConfigMap indicating external infra is configured.
+# This ConfigMap is created by the Ansible playbook after successful setup.
+# When missing, the policy goes NonCompliant and triggers PolicyAutomation.
+apiVersion: policy.open-cluster-management.io/v1
+kind: ConfigurationPolicy
+metadata:
+  name: oidc-external-infra-status
+spec:
+  remediationAction: inform
+  severity: high
+  namespaceSelector:
+    include:
+      - openshift-oidc-proxy
+  object-templates:
+    - complianceType: musthave
+      objectDefinition:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: oidc-external-infra-ready
+          namespace: openshift-oidc-proxy
+        data:
+          f5_configured: "true"
+          dns_configured: "true"
+          entra_configured: "true"

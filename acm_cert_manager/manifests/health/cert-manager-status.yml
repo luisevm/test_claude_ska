@@ -1,0 +1,27 @@
+---
+# Verifies that all cert-manager Deployments in the cert-manager namespace
+# are fully available and ready. Uses object-templates-raw to dynamically
+# check each Deployment without hardcoding names.
+# Requires ACM 2.14+ for the `fail` function.
+object-templates-raw: |
+  {{- range $dep := (lookup "apps/v1" "Deployment" "cert-manager" "").items }}
+  - complianceType: musthave
+    objectDefinition:
+      kind: Deployment
+      apiVersion: apps/v1
+      metadata:
+        namespace: {{ $dep.metadata.namespace }}
+        name: {{ $dep.metadata.name }}
+      status:
+        replicas: '{{ $dep.spec.replicas | default 1 | toInt }}'
+        updatedReplicas: '{{ $dep.spec.replicas | default 1 | toInt }}'
+        readyReplicas: '{{ $dep.spec.replicas | default 1 | toInt }}'
+        availableReplicas: '{{ $dep.spec.replicas | default 1 | toInt }}'
+        conditions:
+          {{- range $c := $dep.status.conditions }}
+            {{- $_ := set $c "status" "True" }}
+          - {{ $c | toRawJson | toLiteral }}
+          {{- end }}
+  {{- else }}
+    {{- fail "There are zero deployments in cert-manager namespace."}}
+  {{- end }}

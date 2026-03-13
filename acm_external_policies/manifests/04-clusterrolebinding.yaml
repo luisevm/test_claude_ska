@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oidc-proxy-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: oidc-proxy-reader
+subjects:
+  - kind: ServiceAccount
+    name: oidc-proxy-sa
+    namespace: openshift-oidc-proxy

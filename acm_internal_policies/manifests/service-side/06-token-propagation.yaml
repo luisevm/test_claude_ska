@@ -1,0 +1,74 @@
+# Policy B — deployed to the service cluster.
+#
+# Uses object-templates-raw with HUB templates to read per-cluster
+# Secrets from acm-policies namespace (copied there by Policy A)
+# and create corresponding Secrets on the service cluster.
+#
+# FIX #5 — ACM 2.15 restricts hub template lookups to same-namespace
+# and namespaced resources only. Policy A copies all data into
+# acm-policies namespace Secrets, and this policy reads them.
+#
+# FIX #7 — YAML safety for multi-line values:
+#   Token and CA cert data are passed as raw base64 via .data (not stringData)
+#   to avoid YAML parsing errors from newlines in PEM certificates.
+apiVersion: policy.open-cluster-management.io/v1
+kind: ConfigurationPolicy
+metadata:
+  name: internal-trust-propagate-tokens
+spec:
+  remediationAction: enforce
+  severity: high
+  object-templates-raw: |
+    {{hub- $registry := (lookup "v1" "ConfigMap" "acm-policies" "operator-clusters-registry") hub}}
+    {{hub- $clusterNames := list hub}}
+    {{hub- if and $registry $registry.data (index $registry.data "cluster-names") hub}}
+    {{hub- $clusterNames = splitList "," (index $registry.data "cluster-names") hub}}
+    {{hub- end hub}}
+    {{hub- range $clusterName := $clusterNames hub}}
+    {{hub- if ne $clusterName "" hub}}
+    {{hub- $secretName := printf "hub-copy-token-%s" $clusterName hub}}
+    {{hub- $hubSecret := (lookup "v1" "Secret" "acm-policies" $secretName) hub}}
+    {{hub- if and $hubSecret $hubSecret.data hub}}
+    - complianceType: musthave
+      objectDefinition:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: review-token-{{hub $clusterName hub}}
+          namespace: platform-services
+          labels:
+            app.kubernetes.io/part-of: internal-trust
+            app.kubernetes.io/managed-by: acm-policy
+            internal-trust/cluster: {{hub $clusterName hub}}
+        type: Opaque
+        data:
+          token: '{{hub index $hubSecret.data "token" hub}}'
+          ca.crt: '{{hub index $hubSecret.data "ca.crt" hub}}'
+          api-url: '{{hub index $hubSecret.data "api-url" hub}}'
+    {{hub- end hub}}
+    {{hub- end hub}}
+    {{hub- end hub}}
+    - complianceType: musthave
+      objectDefinition:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: cluster-registry
+          namespace: platform-services
+          labels:
+            app.kubernetes.io/part-of: internal-trust
+            app.kubernetes.io/managed-by: acm-policy
+        data:
+          clusters: '{{hub- if and $registry $registry.data (index $registry.data "cluster-names") hub}}{{hub index $registry.data "cluster-names" hub}}{{hub- end hub}}'
+    - complianceType: musthave
+      objectDefinition:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: token-sync-ready
+          namespace: platform-services
+          labels:
+            app.kubernetes.io/part-of: internal-trust
+            app.kubernetes.io/managed-by: acm-policy
+        data:
+          tokens_synced: "true"
