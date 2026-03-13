@@ -120,6 +120,7 @@ spec:
             httpGet:
               path: /healthz
               port: 8443
+              scheme: HTTP
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 12
@@ -127,12 +128,14 @@ spec:
             httpGet:
               path: /healthz
               port: 8443
+              scheme: HTTP
             initialDelaySeconds: 3
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /healthz
               port: 8443
+              scheme: HTTP
             initialDelaySeconds: 10
             periodSeconds: 30
           resources:
